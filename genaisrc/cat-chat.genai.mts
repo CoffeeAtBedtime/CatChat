@@ -8,6 +8,7 @@ import { StateMachine } from './state-machine.ts';
 import { Scribe } from './agents/scribe.mts';
 import { Participant } from './agents/participant.mts';
 import { Cat } from './agents/cat.mts';
+import { ParticipantBuilder } from './utils/participant-builder.mts';
 
 export enum CatChatState {
   INIT,
@@ -21,6 +22,7 @@ export enum CatChatEvent {
   UserInputReceived,
   AgentsTurnToRespond,
   CatNeedsToBeFed,
+  ParticipantsComeAndGo,
 }
 
 class CatChat implements StateMachine<CatChatState, CatChatEvent> {
@@ -29,6 +31,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
   private userInputResolver?: (input: string) => void;
   private currentUserInput: string = '';
 
+  // The regulars
   private participants: Participant[] = [
     new Participant('🧔‍♂️: IAintLion1590'),
     new Participant('👱‍♀️: MittensMom135'),
@@ -159,6 +162,21 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
             this.server.emitCurrentTopic(summary);
           });
 
+          return CatChatState.DISCUSSION;
+        }
+        if (event === CatChatEvent.ParticipantsComeAndGo) {
+          if (Math.random() < 0.1) {
+            const newParticipant = ParticipantBuilder.createNewParticipant();
+            this.participants.push(newParticipant);
+            await this.server.emitConversationUpdate(`👮 Administrator: **${newParticipant.getName()}** has joined the chat.`);
+          }
+
+          if (Math.random() < 0.1 && this.participants.length > 3) {
+            const indexToRemove = Math.floor(Math.random() * this.participants.length);
+            const removedParticipant = this.participants[indexToRemove];
+            this.participants.splice(indexToRemove, 1);
+            await this.server.emitConversationUpdate(`👮 Administrator: **${removedParticipant.getName()}** has left the chat.`);
+          }
           return CatChatState.WAITING_FOR_INPUT;
         }
         if (event === CatChatEvent.CatNeedsToBeFed) return CatChatState.COMPLETE;
@@ -187,6 +205,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
         await this.process(CatChatEvent.UserInputReceived);
       } else if (this.state === CatChatState.DISCUSSION) {
         await this.process(CatChatEvent.AgentsTurnToRespond);
+        await this.process(CatChatEvent.ParticipantsComeAndGo);
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }

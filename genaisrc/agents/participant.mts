@@ -5,9 +5,10 @@ export class Participant {
     this.handle = handle;
     this.personality = this.generateRandomPersonality();
   }
-  async prompt(lastMessage: string, conversation: string, files: WorkspaceFile[]): Promise<string> {
-    const res = await runPrompt((ctx) => {
-      ctx.$`        
+  async prompt(lastMessage: string, conversation: string, index?: WorkspaceFileIndex): Promise<string> {
+    const res = await runPrompt(
+      (ctx) => {
+        ctx.$`        
         Role: Cat Enthusiast & Engaging Conversationalist in an internet chat conversation about cats. Your name is ${this.handle}. 
 
         Personal Background:
@@ -42,13 +43,34 @@ export class Participant {
         Conversation History:
         <CONTEXT>
   
-        Here are some files with cat related information you can use in your responses:
-        <FILES>
+        Use tools to search for relevant cat information in indexed content to include in your conversation response.
         `;
-      ctx.def('LAST_MESSAGE', lastMessage, { ignoreEmpty: true });
-      ctx.def('CONTEXT', conversation, { ignoreEmpty: true });
-      ctx.def('FILES', files, { ignoreEmpty: true });
-    });
+        ctx.def('LAST_MESSAGE', lastMessage, { ignoreEmpty: true });
+        ctx.def('CONTEXT', conversation, { ignoreEmpty: true });
+        if (index) {
+          ctx.defTool(
+            'index_vector_search',
+            'Search for relevant cat information in the indexed content',
+            {
+              keyword: {
+                type: 'string',
+                description: 'The keyword or phrase to search for in the indexed content',
+              },
+            },
+            async ({ context, keyword }) => {
+              context.log(`Searching for: ${keyword}`);
+              try {
+                const searchResults = await index.search(keyword, { topK: 3 });
+                return YAML.stringify(searchResults.map(({ filename }) => filename));
+              } catch (error) {
+                return `Error searching: ${error.message}`;
+              }
+            },
+          );
+        }
+      },
+      { tools: ['fs_ask_file'] },
+    );
     return `**${this.handle}**: ${res.text}`;
   }
 

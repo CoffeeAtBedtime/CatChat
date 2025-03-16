@@ -30,6 +30,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
   private server: Server;
   private userInputResolver?: (input: string) => void;
   private currentUserInput: string = '';
+  private fileIndex: WorkspaceFileIndex;
 
   // The regulars
   private participants: Participant[] = [
@@ -54,6 +55,11 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
       this.server.emitConversationUpdate(message);
     });
     this.subscribe(this.cat.onStateChange.bind(this.cat));
+  }
+
+  private async initializeVectorSearch(): Promise<void> {
+    this.fileIndex = await retrieval.index('catchat');
+    await this.fileIndex.insertOrUpdate(env.files); // This could take a bit if you have a lot of files
   }
 
   subscribe(listener: (state: CatChatState, event: CatChatEvent) => void): void {
@@ -136,7 +142,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
           // Process mentioned participants sequentially to allow each to see the previous response
           for (const participant of mentionedParticipants) {
             const currentConversation = (await this.scribeAgent.getConversationHistory()).join('\n');
-            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, env.files);
+            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, this.fileIndex);
             await this.scribeAgent.record(message);
             const [newMessage] = await this.scribeAgent.getNewMessagesAndFlush();
             await this.server.emitConversationUpdate(newMessage);
@@ -152,7 +158,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
           // Process participants sequentially to allow each to see the previous response
           for (const participant of selectedParticipants) {
             const currentConversation = (await this.scribeAgent.getConversationHistory()).join('\n');
-            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, env.files);
+            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, this.fileIndex);
             await this.scribeAgent.record(message);
             const [newMessage] = await this.scribeAgent.getNewMessagesAndFlush();
             await this.server.emitConversationUpdate(newMessage);
@@ -216,6 +222,7 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
     this.state = CatChatState.INIT;
     // Give the server time to start.
     await new Promise((resolve) => setTimeout(resolve, 2000));
+    await this.initializeVectorSearch();
   }
 
   stop(): void {

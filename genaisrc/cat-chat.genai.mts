@@ -1,6 +1,6 @@
 script({
   model: 'openai:gpt-4o-mini',
-  files: ['rag/**/*.*'],
+  files: ['rag/**/*.*'], // Including all the files confuses many models consider commenting these out at that point
 });
 //import { classify } from 'genaiscript/runtime';
 import { Server } from './server.ts';
@@ -25,15 +25,21 @@ export enum CatChatEvent {
 
 class CatChat implements StateMachine<CatChatState, CatChatEvent> {
   state: CatChatState = CatChatState.INIT;
-  private participant1 = new Participant('🧔‍♂️: IAintLion1590');
-  private participant2 = new Participant('👱‍♀️: MittensMom135');
-  private cat: Cat;
-
-  private scribeAgent = new Scribe();
   private server: Server;
   private userInputResolver?: (input: string) => void;
-  private listeners: Array<(state: CatChatState, event: CatChatEvent) => void> = [];
   private currentUserInput: string = '';
+
+  private participants: Participant[] = [
+    new Participant('🧔‍♂️: IAintLion1590'),
+    new Participant('👱‍♀️: MittensMom135'),
+    new Participant('🧑‍🦰: KatLover42'),
+    new Participant('👨‍🦱: RikkiTikki80'),
+    new Participant('👩‍🦳: AllieCat_1'),
+  ];
+  private cat: Cat;
+  private scribeAgent = new Scribe();
+
+  private listeners: Array<(state: CatChatState, event: CatChatEvent) => void> = [];
 
   constructor(server: Server) {
     this.server = server;
@@ -115,20 +121,44 @@ class CatChat implements StateMachine<CatChatState, CatChatEvent> {
         break;
       case CatChatState.DISCUSSION:
         if (event === CatChatEvent.AgentsTurnToRespond) {
-          const conversation = (await this.scribeAgent.getConversationHistory()).join('\n');
-          const responses = await Promise.all([
-            this.participant1.prompt(this.scribeAgent.getLastMessage(), conversation, env.files),
-            this.participant2.prompt(this.scribeAgent.getLastMessage(), conversation, env.files),
-            // this.cat.prompt(this.scribeAgent.getLastMessage(), conversation),
-          ]);
-          await this.scribeAgent.getNewMessagesAndFlush(); // Clear buffer
+          // Check if any participants are mentioned in the last message
+          const mentionedParticipants = this.participants.filter((participant) => {
+            // Extract the name without emoji (e.g., "IAintLion1590" from "🧔‍♂️: IAintLion1590")
+            const nameWithoutEmoji = participant.getName().split(':')[1]?.trim() || '';
+            const lastMessageLower = this.scribeAgent.getLastMessage().toLowerCase();
+            const nameLower = nameWithoutEmoji.toLowerCase();
+            return lastMessageLower.includes(nameLower) || lastMessageLower.includes(`@${nameLower}`);
+          });
 
-          responses.forEach((message) => this.scribeAgent.record(message));
-          const messages = await this.scribeAgent.getNewMessagesAndFlush();
-          for (const message of messages) {
-            await this.server.emitConversationUpdate(message);
+          // Process mentioned participants sequentially to allow each to see the previous response
+          for (const participant of mentionedParticipants) {
+            const currentConversation = (await this.scribeAgent.getConversationHistory()).join('\n');
+            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, env.files);
+            await this.scribeAgent.record(message);
+            const [newMessage] = await this.scribeAgent.getNewMessagesAndFlush();
+            await this.server.emitConversationUpdate(newMessage);
           }
-          this.server.emitCurrentTopic(await this.scribeAgent.summarizeConversation());
+
+          // Randomly select 1-2 participants to respond
+          const numberOfResponders = Math.floor(Math.random() * 2) + 1;
+          const shuffledParticipants = [...this.participants].sort(() => Math.random() - 0.5);
+          const selectedParticipants = shuffledParticipants.slice(0, numberOfResponders);
+
+          console.log(`Selected ${numberOfResponders} participants to respond to this message`);
+
+          // Process participants sequentially to allow each to see the previous response
+          for (const participant of selectedParticipants) {
+            const currentConversation = (await this.scribeAgent.getConversationHistory()).join('\n');
+            const message = await participant.prompt(this.scribeAgent.getLastMessage(), currentConversation, env.files);
+            await this.scribeAgent.record(message);
+            const [newMessage] = await this.scribeAgent.getNewMessagesAndFlush();
+            await this.server.emitConversationUpdate(newMessage);
+          }
+
+          await this.scribeAgent.summarizeConversation().then((summary) => {
+            this.server.emitCurrentTopic(summary);
+          });
+
           return CatChatState.WAITING_FOR_INPUT;
         }
         if (event === CatChatEvent.CatNeedsToBeFed) return CatChatState.COMPLETE;

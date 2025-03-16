@@ -1,6 +1,6 @@
 # CatChat
 
-A demo of using GenAIScript to create an interactive conversational application. Any [GenAIScript configuration](https://microsoft.github.io/genaiscript/getting-started/configuration/) could be used. For the demo `openai:gpt-4o-mini` works best.
+A demo of using GenAIScript to create an interactive conversational application. Any [GenAIScript configuration](https://microsoft.github.io/genaiscript/getting-started/configuration/) could be used. For the demo `openai:gpt-4o-mini` works best. If you want to use local models from `ollama` comment out the `files: ['rag/**/*.*']` or they struggle.
 
 ## 🐱 Overview
 
